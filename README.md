@@ -8,6 +8,7 @@ Runtime Systems course project
 	* Preemptive style is the most common kind of multitasking. Threads are system level implementation.
 * Coroutines are implemented with async/await in single-threaded event loop programming languages. 
 * This kind is suited for resource-constrained devices.
+* More on this direction in [this file](coroutines.md).
 
 #### Probable directions of work
 * Understand and analyse the benefits of each multitasking type. Explore the difficulties of implementing support at the programming language or system level.
