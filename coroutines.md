@@ -71,7 +71,41 @@ With Coroutines, this could be implemented easily with the consumer as a suspend
 * Explore the techniques of implementing coroutine support and compare them in terms of added overhead and power of the construct.
 * Implement coroutine support in a high-level language that lacks it.
 
-### References.
+### How can Coroutines be implemented?
+#### Function calls on heap
+* Programming languages implement function calls on the stack. Once a function is invoked, it runs till completion and then the corresponding stack frame is popped.
+* This model is not suitable for coroutines as we will want to resume the function from the same point of execution.
+* A natural solution here would be, when a coroutine wishes to suspend itself, its entire stack frame and the current instruction pointer could be saved on the heap.
+* A pointer to this heap location would be stored in a table in memory that is indexed by the coroutine function name.
+* When a suspended coroutine is to be resumed, we look for its saved address in our table and copy the stack frame from heap and jump to the saved instruction pointer.
+**Disadvantages**
+* There would be huge overhead due to copying the stack frame onto the heap for each coroutine invoke and suspend. Since the solution we are aiming for needs to support these invocations on a very huge scale, this overhead might be unacceptable.
+
+* The C++ library we mentioned above implements a heap based solution, with optimizations to prevent this multiple memory copies. We plan to analyze how they do these optimizations in runtime.
+
+#### Using static variables statements
+* This solution is at the language-level. It maintains state of the funciton as a static variable and based on its value multiplexes to the desired part of the function using goto statements.
+**Disadvantages**
+* The programmer has to bear the overhead of defining the states properly and controlling their flow. Further, this method of implementation makes the code hard to follow. 
+* Now, we would ideally like an implementation that does not put too much overfead on the programmer and also looks simple to parse. The following implementation method is one simple and elegant way in which this can be achieved.
+
+**Macros to the rescue**
+```
+#define crBegin static int state=0; switch(state) { case 0:
+#define crReturn(i,x) do { state=i; return x; case i:; } while (0)
+#define crFinish }
+int function(void) {
+    static int i;
+    crBegin;
+    for (i = 0; i < 10; i++)
+        crReturn(1, i);
+    crFinish;
+}
+```
+The above snippet suspends itself after each iteration of the loop and returns the value i. As we can see, the library simply provides the three macros that need to be used in a specific format to generate valid code. This lets the programmer use coroutines easily.
+
+### Reference
 * [Simon Tatham blog post](https://www.chiark.greenend.org.uk/~sgtatham/coroutines.html)
 * [C++ Implementation Talk](https://www.youtube.com/watch?v=YYtzQ355_Co)
 * [Why suspend?](https://medium.com/@elizarov/blocking-threads-suspending-coroutines-d33e11bf4761)
+
