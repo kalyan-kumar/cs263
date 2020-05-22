@@ -109,3 +109,24 @@ The above snippet suspends itself after each iteration of the loop and returns t
 * [C++ Implementation Talk](https://www.youtube.com/watch?v=YYtzQ355_Co)
 * [Why suspend?](https://medium.com/@elizarov/blocking-threads-suspending-coroutines-d33e11bf4761)
 
+#### General Theory
+* Activiation Frame for Coroutines consist of two parts - coroutine frame and stack frame. Coroutine frame consists of the data that needs to be persisted across suspensions, while stack frame has the data that need not be persisted.
+* Stack frame can be implemented on the stack. Compiler has to have the intelligence of finding which data needs to go where.
+* Suspend points are identified by the keywords `co_await` and `co_yield`.
+* Things done when a coroutine hits a suspension point -
+	* Prepare for suspension by storing register values and an identifier of which suspension point caused the suspension.
+	* The coroutine is now considered suspended. It is given a handle to the coroutine frame and an opportunity to execute additional logic before transferring control back to the caller. This opportunity is to prevent a need for synchronization that would be needed due to a potential race condition (explained later).
+	* Now the Coroutine can either transfer control back or resume execution. If control is transferred back, the stack frame is popped off the stack.
+* A coroutine is resumed when `void resume()` is invoked on the coroutine frame. A stack frame is allocated as a normal function call and control is transferred to the resumption point.
+* Destroy operation can be done on a coroutine frame handle, only on a suspended coroutine. Similar to the Resume operation, the activation frame is re-activated by allocating stack space and storing the return address. But instead of jumping to the last suspend piont, an alternate code path is taken that invokes destructors of all data in the coroutine frame. `void destroy()` is invoked on the coroutine frame handle to invoke the destroy operation.
+* The caller of a coroutine has the same interface as a regular function. Stack space is allocated as usual and control is transferred to the coroutine. The coroutine is then responsible for allocating space on the heap for the coroutine frame and transfer the needed data to the coroutine frame.
+* Return operation -
+	* `co_return` statement executed from inside the coroutine to indicate returning.
+	* The return-value is stored somewhere (customizable by the coroutine) and destructs any in-scope data structures.
+	* An opporunity to execute some additional logic is given. Here, the return-value could be published, or another suspended coroutine
+	* The coroutine can now either suspend or destroy itself. Control is transferred back according to the suspend or destroy operation semantics.
+	* The return value given to the caller is different from the return value of the return semantics. The return-value of return semantics could go to the caller long after the caller has resumed execution.
+* How do we access local variables on the stack? What if the allocated memory runs out?
+
+#### Implementation HLD
+* Facilities provided by the C++ Coroutines TS are like a low-level assembly-language for coroutines. These can be difficult to use directly in a safe way and are intended to be used by library-writers to build higher-level abstractions that application developers can work with safely.
