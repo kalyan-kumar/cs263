@@ -75,7 +75,7 @@ static struct OpPrecedence OperatorPrecedence[] =
     /* TokenOpenBracket, */ { 15, 0, 0, "(" }, /* TokenCloseBracket, */ { 0, 15, 0, ")" }
 };
 
-void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt);
+void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt, int ForCoroHandle);
 
 #ifdef DEBUG_EXPRESSIONS
 /* show the contents of the expression stack */
@@ -1248,7 +1248,7 @@ int ExpressionParse(struct ParseState *Parser, struct Value **Result)
                 
             if (LexGetToken(Parser, NULL, FALSE) == TokenOpenBracket)
             {
-                ExpressionParseFunctionCall(Parser, &StackTop, LexValue->Val->Identifier, Parser->Mode == RunModeRun && Precedence < IgnorePrecedence);
+                ExpressionParseFunctionCall(Parser, &StackTop, LexValue->Val->Identifier, Parser->Mode == RunModeRun && Precedence < IgnorePrecedence, FALSE);
             }
             else
             {
@@ -1438,7 +1438,7 @@ void ExpressionParseMacroCall(struct ParseState *Parser, struct ExpressionStack 
 }
 
 /* do a function call */
-void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt)
+void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt, int ForCoroHandle)
 {
     struct Value *ReturnValue = NULL;
     struct Value *FuncValue = NULL;
@@ -1463,8 +1463,17 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
         if (FuncValue->Typ->Base != TypeFunction)
             ProgramFail(Parser, "%t is not a function - can't call", FuncValue->Typ);
     
-        ExpressionStackPushValueByType(Parser, StackTop, FuncValue->Val->FuncDef.ReturnType);
-        ReturnValue = (*StackTop)->Val;
+		if (ForCoroHandle)
+		{
+			ExpressionStackPushValueByType(Parser, StackTop, &(Parser->pc->CoroHandleType));
+			ReturnValue = VariableAllocValueFromType(Parser->pc, Parser, FuncValue->Val->FuncDef.ReturnType, FALSE, NULL, FALSE);
+		}
+		else
+		{
+			ExpressionStackPushValueByType(Parser, StackTop, FuncValue->Val->FuncDef.ReturnType);
+			ReturnValue = (*StackTop)->Val;
+		}
+
         HeapPushStackFrame(Parser->pc);
         ParamArray = HeapAllocStack(Parser->pc, sizeof(struct Value *) * FuncValue->Val->FuncDef.NumParams);    
         if (ParamArray == NULL)
@@ -1542,17 +1551,32 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
 
             Parser->ScopeID = OldScopeID;
                 
-            if (ParseStatement(&FuncParser, TRUE) != ParseResultOk)
-                ProgramFail(&FuncParser, "function body expected");
-            
-            if (RunIt)
-            {
+			if (ForCoroHandle)
+			{
+				int StackFrameSize;
+				void *StackFrame = HeapSaveCurrentStackFrame(Parser->pc, &StackFrameSize);
+				int ParamsParseFrameSize;
+				void *ParamsParseFrame = HeapSavePreviousStackFrame(Parser->pc, &ParamsParseFrameSize);
+				struct ParseState *Continuation = HeapAllocMem(Parser->pc, sizeof(struct ParseState));
+				ParserCopy(Continuation, &FuncParser);
+
+				(*StackTop)->Val->Val->CoroHandle.StackFrameSize = StackFrameSize;
+				(*StackTop)->Val->Val->CoroHandle.StackFrame = StackFrame;
+				(*StackTop)->Val->Val->CoroHandle.ParamsParseFrameSize = ParamsParseFrameSize;
+				(*StackTop)->Val->Val->CoroHandle.ParamsParseFrame = ParamsParseFrame;
+				(*StackTop)->Val->Val->CoroHandle.Continuation = Continuation;
+			}
+			else
+			{
+				if (ParseStatement(&FuncParser, TRUE) != ParseResultOk)
+					ProgramFail(&FuncParser, "function body expected");
+
                 if (FuncParser.Mode == RunModeRun && FuncValue->Val->FuncDef.ReturnType != &Parser->pc->VoidType)
                     ProgramFail(&FuncParser, "no value returned from a function returning %t", FuncValue->Val->FuncDef.ReturnType);
 
                 else if (FuncParser.Mode == RunModeGoto)
                     ProgramFail(&FuncParser, "couldn't find goto label '%s'", FuncParser.SearchGotoLabel);
-            }
+			}
             
             VariableStackFramePop(Parser);
         }

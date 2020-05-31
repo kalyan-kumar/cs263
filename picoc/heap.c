@@ -115,6 +115,40 @@ void HeapPushStackFrame(Picoc *pc)
     pc->HeapStackTop = (void *)((char *)pc->HeapStackTop + MEM_ALIGN(sizeof(ALIGN_TYPE)));
 }
 
+void *HeapSaveCurrentStackFrame(Picoc *pc, int *FrameSize)
+{
+    if (*(void **)pc->StackFrame == NULL)
+		return NULL;
+
+#ifdef DEBUG_HEAP
+	printf("Saving stack frame from 0x%lx to 0x%lx", (unsigned long)pc->StackFrame, (unsigned long)pc->HeapStackTop);
+#endif
+	*FrameSize = ((char *)pc->HeapStackTop - (char *)pc->StackFrame);
+
+	void *FrameHandle = HeapAllocMem(pc, *FrameSize);
+	memcpy(FrameHandle, (void *)pc->StackFrame, *FrameSize);
+
+	return FrameHandle;
+}
+
+void *HeapSavePreviousStackFrame(Picoc *pc, int *FrameSize)
+{
+    if (*(void **)pc->StackFrame == NULL)
+		return NULL;
+
+	void *BasePtr = *(void **)pc->StackFrame;
+
+	if (*(void **)BasePtr == NULL)
+		return NULL;
+
+	*FrameSize = ((char *)pc->StackFrame - (char *)BasePtr);
+
+	void *FrameHandle = HeapAllocMem(pc, *FrameSize);
+	memcpy(FrameHandle, BasePtr, *FrameSize);
+
+	return FrameHandle;
+}
+
 /* pop the current stack frame, freeing all memory in the frame. can return NULL */
 int HeapPopStackFrame(Picoc *pc)
 {
