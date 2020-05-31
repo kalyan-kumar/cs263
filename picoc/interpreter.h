@@ -146,6 +146,7 @@ enum BaseType
     TypeFP,                     /* floating point */
 #endif
     TypeFunction,               /* a function */
+	TypeCoroutineHandle,		/* a suspended coroutine */
     TypeMacro,                  /* a macro */
     TypePointer,                /* a pointer */
     TypeArray,                  /* an array of a sub-type */
@@ -184,6 +185,16 @@ struct FuncDef
     struct ParseState Body;         /* lexical tokens of the function body if not intrinsic */
 };
 
+/* coroutine handle */
+struct CoroHandle
+{
+	void *StackFrame;
+	int StackFrameSize;
+	void *ParamsParseFrame;
+	int ParamsParseFrameSize;
+	struct ParseState *Continuation;
+};
+
 /* macro definition */
 struct MacroDef
 {
@@ -207,6 +218,7 @@ union AnyValue
     char ArrayMem[2];               /* placeholder for where the data starts, doesn't point to it */
     struct ValueType *Typ;
     struct FuncDef FuncDef;
+	struct CoroHandle CoroHandle;
     struct MacroDef MacroDef;
 #ifndef NO_FP
     double FP;
@@ -430,6 +442,7 @@ struct Picoc_Struct
     struct ValueType VoidType;
     struct ValueType TypeType;
     struct ValueType FunctionType;
+	struct ValueType CoroHandleType;
     struct ValueType MacroType;
     struct ValueType EnumType;
     struct ValueType GotoLabelType;

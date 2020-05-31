@@ -68,6 +68,7 @@ void PrintType(struct ValueType *Typ, IOFILE *Stream)
         case TypeFP:				PrintStr("double", Stream); break;
 #endif
         case TypeFunction:			PrintStr("function", Stream); break;
+		case TypeCoroutineHandle:	PrintStr("coroutine handle", Stream); break;
         case TypeMacro:				PrintStr("macro", Stream); break;
         case TypePointer:			if (Typ->FromType) PrintType(Typ->FromType, Stream); PrintCh('*', Stream); break;
         case TypeArray:				PrintType(Typ->FromType, Stream); PrintCh('[', Stream); if (Typ->ArraySize != 0) PrintSimpleInt(Typ->ArraySize, Stream); PrintCh(']', Stream); break;

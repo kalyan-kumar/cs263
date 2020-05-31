@@ -129,6 +129,7 @@ void TypeInit(Picoc *pc)
     TypeAddBaseType(pc, &pc->UnsignedCharType, TypeUnsignedChar, sizeof(unsigned char), (char *)&ca.y - &ca.x);
     TypeAddBaseType(pc, &pc->VoidType, TypeVoid, 0, 1);
     TypeAddBaseType(pc, &pc->FunctionType, TypeFunction, sizeof(int), IntAlignBytes);
+	TypeAddBaseType(pc, &pc->CoroHandleType, TypeCoroutineHandle, sizeof(int), IntAlignBytes);
     TypeAddBaseType(pc, &pc->MacroType, TypeMacro, sizeof(int), IntAlignBytes);
     TypeAddBaseType(pc, &pc->GotoLabelType, TypeGotoLabel, 0, 1);
 #ifndef NO_FP
