@@ -47,6 +47,7 @@ static struct ReservedWord ReservedWords[] =
     { "break", TokenBreak },
     { "case", TokenCase },
     { "char", TokenCharType },
+	{ "co_await", TokenCoAwait },
     { "continue", TokenContinue },
     { "default", TokenDefault },
     { "delete", TokenDelete },
@@ -67,12 +68,14 @@ static struct ReservedWord ReservedWords[] =
     { "long", TokenLongType },
     { "new", TokenNew },
     { "register", TokenRegisterType },
+	{ "resume", TokenResume },
     { "return", TokenReturn },
     { "short", TokenShortType },
     { "signed", TokenSignedType },
     { "sizeof", TokenSizeof },
     { "static", TokenStaticType },
     { "struct", TokenStructType },
+	{ "suspend", TokenSuspend },
     { "switch", TokenSwitch },
     { "typedef", TokenTypedef },
     { "union", TokenUnionType },
@@ -869,11 +872,11 @@ void LexPrintToken(enum LexToken Token)
         /* 0x34 */ "LeftBrace", "RightBrace",
         /* 0x36 */ "IntType", "CharType", "FloatType", "DoubleType", "VoidType", "EnumType",
         /* 0x3c */ "LongType", "SignedType", "ShortType", "StaticType", "AutoType", "RegisterType", "ExternType", "StructType", "UnionType", "UnsignedType", "Typedef",
-        /* 0x46 */ "Continue", "Do", "Else", "For", "Goto", "If", "While", "Break", "Switch", "Case", "Default", "Return",
-        /* 0x52 */ "HashDefine", "HashInclude", "HashIf", "HashIfdef", "HashIfndef", "HashElse", "HashEndif",
-        /* 0x59 */ "New", "Delete",
-        /* 0x5b */ "OpenMacroBracket",
-        /* 0x5c */ "EOF", "EndOfLine", "EndOfFunction"
+		/* 0x46 */ TokenContinue, TokenDo, TokenElse, TokenFor, TokenGoto, TokenResume, TokenIf, TokenWhile, TokenBreak, TokenSwitch, TokenCase, TokenDefault, TokenReturn, TokenSuspend, TokenCoAwait,
+		/* 0x55 */ TokenHashDefine, TokenHashInclude, TokenHashIf, TokenHashIfdef, TokenHashIfndef, TokenHashElse, TokenHashEndif,
+		/* 0x5c */ TokenNew, TokenDelete,
+		/* 0x5e */ TokenOpenMacroBracket,
+		/* 0x5f */ TokenEOF, TokenEndOfLine, TokenEndOfFunction
     };
     printf("{%s}", TokenNames[Token]);
 }

@@ -86,11 +86,11 @@ enum LexToken
     /* 0x34 */ TokenLeftBrace, TokenRightBrace,
     /* 0x36 */ TokenIntType, TokenCharType, TokenFloatType, TokenDoubleType, TokenVoidType, TokenEnumType,
     /* 0x3c */ TokenLongType, TokenSignedType, TokenShortType, TokenStaticType, TokenAutoType, TokenRegisterType, TokenExternType, TokenStructType, TokenUnionType, TokenUnsignedType, TokenTypedef,
-    /* 0x46 */ TokenContinue, TokenDo, TokenElse, TokenFor, TokenGoto, TokenIf, TokenWhile, TokenBreak, TokenSwitch, TokenCase, TokenDefault, TokenReturn,
-    /* 0x52 */ TokenHashDefine, TokenHashInclude, TokenHashIf, TokenHashIfdef, TokenHashIfndef, TokenHashElse, TokenHashEndif,
-    /* 0x59 */ TokenNew, TokenDelete,
-    /* 0x5b */ TokenOpenMacroBracket,
-    /* 0x5c */ TokenEOF, TokenEndOfLine, TokenEndOfFunction
+    /* 0x46 */ TokenContinue, TokenDo, TokenElse, TokenFor, TokenGoto, TokenResume, TokenIf, TokenWhile, TokenBreak, TokenSwitch, TokenCase, TokenDefault, TokenReturn, TokenSuspend, TokenCoAwait,
+    /* 0x55 */ TokenHashDefine, TokenHashInclude, TokenHashIf, TokenHashIfdef, TokenHashIfndef, TokenHashElse, TokenHashEndif,
+    /* 0x5c */ TokenNew, TokenDelete,
+    /* 0x5e */ TokenOpenMacroBracket,
+    /* 0x5f */ TokenEOF, TokenEndOfLine, TokenEndOfFunction
 };
 
 /* used in dynamic memory allocation */
