@@ -3,6 +3,8 @@
  
 #include "interpreter.h"
 
+//#define DEBUG_EXPRESSIONS 1
+
 /* whether evaluation is left to right for a given precedence level */
 #define IS_LEFT_TO_RIGHT(p) ((p) != 2 && (p) != 14)
 #define BRACKET_PRECEDENCE 20
@@ -1315,6 +1317,26 @@ int ExpressionParse(struct ParseState *Parser, struct Value **Result)
             TypeValue->Val->Typ = Typ;
             ExpressionStackPushValueNode(Parser, &StackTop, TypeValue);
         }
+		else if (Token == TokenCoAwait) {
+			LexGetToken(Parser, &LexValue, TRUE);
+			int RunIt = (Parser->Mode == RunModeRun && Precedence < IgnorePrecedence);
+			ExpressionParseFunctionCall(Parser, &StackTop, LexValue->Val->Identifier, RunIt, TRUE);
+
+			if (RunIt)
+			{
+				int RetValuePartSize = sizeof(struct ExpressionStack) + sizeof(struct Value) + TypeStackSizeValue(StackTop->Val);
+				void *CoroHandlerPart = ((char *)(StackTop->Next)) + sizeof(struct ExpressionStack);
+
+				HeapPopStack(Parser->pc, CoroHandlerPart, RetValuePartSize);
+				StackTop = StackTop->Next;
+			}
+
+            /* if we've successfully ignored the RHS turn ignoring off */
+            if (Precedence <= IgnorePrecedence)
+                IgnorePrecedence = DEEP_PRECEDENCE;
+
+            PrefixState = FALSE;
+		}
         else
         { 
             /* it isn't a token from an expression */
@@ -1440,6 +1462,7 @@ void ExpressionParseMacroCall(struct ParseState *Parser, struct ExpressionStack 
 /* do a function call */
 void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt, int ForCoroHandle)
 {
+	struct CoroHandle *coroHandle = NULL;
     struct Value *ReturnValue = NULL;
     struct Value *FuncValue = NULL;
     struct Value *Param;
@@ -1462,18 +1485,16 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
         
         if (FuncValue->Typ->Base != TypeFunction)
             ProgramFail(Parser, "%t is not a function - can't call", FuncValue->Typ);
-    
+
 		if (ForCoroHandle)
 		{
-			ExpressionStackPushValueByType(Parser, StackTop, &(Parser->pc->CoroHandleType));
-			ReturnValue = VariableAllocValueFromType(Parser->pc, Parser, FuncValue->Val->FuncDef.ReturnType, FALSE, NULL, FALSE);
+			ExpressionStackPushValueByType(Parser, StackTop, Parser->pc->VoidPtrType);
+			(*StackTop)->Val->Val->Pointer = VariableAlloc(Parser->pc, Parser, sizeof(struct CoroHandle), TRUE);
+			coroHandle = (*StackTop)->Val->Val->Pointer;
 		}
-		else
-		{
-			ExpressionStackPushValueByType(Parser, StackTop, FuncValue->Val->FuncDef.ReturnType);
-			ReturnValue = (*StackTop)->Val;
-		}
+		ExpressionStackPushValueByType(Parser, StackTop, FuncValue->Val->FuncDef.ReturnType);
 
+		ReturnValue = (*StackTop)->Val;
         HeapPushStackFrame(Parser->pc);
         ParamArray = HeapAllocStack(Parser->pc, sizeof(struct Value *) * FuncValue->Val->FuncDef.NumParams);    
         if (ParamArray == NULL)
@@ -1560,11 +1581,11 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
 				struct ParseState *Continuation = HeapAllocMem(Parser->pc, sizeof(struct ParseState));
 				ParserCopy(Continuation, &FuncParser);
 
-				(*StackTop)->Val->Val->CoroHandle.StackFrameSize = StackFrameSize;
-				(*StackTop)->Val->Val->CoroHandle.StackFrame = StackFrame;
-				(*StackTop)->Val->Val->CoroHandle.ParamsParseFrameSize = ParamsParseFrameSize;
-				(*StackTop)->Val->Val->CoroHandle.ParamsParseFrame = ParamsParseFrame;
-				(*StackTop)->Val->Val->CoroHandle.Continuation = Continuation;
+				coroHandle->StackFrameSize = StackFrameSize;
+				coroHandle->StackFrame = StackFrame;
+				coroHandle->ParamsParseFrameSize = ParamsParseFrameSize;
+				coroHandle->ParamsParseFrame = ParamsParseFrame;
+				coroHandle->Continuation = Continuation;
 			}
 			else
 			{
