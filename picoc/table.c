@@ -6,7 +6,7 @@
 /* initialise the shared string system */
 void TableInit(Picoc *pc)
 {
-    TableInitTable(&pc->StringTable, &pc->StringHashTable[0], STRING_TABLE_SIZE, TRUE);
+    TableInitTable(&pc->StringTable, &pc->StringHashTable[0], &pc->StringOffsetTable[0], STRING_TABLE_SIZE, TRUE);
     pc->StrEmpty = TableStrRegister(pc, "");
 }
 
@@ -29,12 +29,17 @@ static unsigned int TableHash(const char *Key, int Len)
 }
 
 /* initialise a table */
-void TableInitTable(struct Table *Tbl, struct TableEntry **HashTable, int Size, int OnHeap)
+void TableInitTable(struct Table *Tbl, struct TableEntry **HashTable, int *OffsetTable, int Size, int OnHeap)
 {
     Tbl->Size = Size;
     Tbl->OnHeap = OnHeap;
     Tbl->HashTable = HashTable;
     memset((void *)HashTable, '\0', sizeof(struct TableEntry *) * Size);
+	if (OffsetTable != NULL)
+	{
+		Tbl->OffsetTable = OffsetTable;
+		memset((void *)OffsetTable, '\0', sizeof(int) * Size);
+	}
 }
 
 /* check a hash table entry for a key */

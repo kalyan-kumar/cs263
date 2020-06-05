@@ -123,10 +123,10 @@ void *HeapSaveCurrentStackFrame(Picoc *pc, int *FrameSize)
 #ifdef DEBUG_HEAP
 	printf("Saving stack frame from 0x%lx to 0x%lx", (unsigned long)pc->StackFrame, (unsigned long)pc->HeapStackTop);
 #endif
-	*FrameSize = ((char *)pc->HeapStackTop - (char *)pc->StackFrame);
+	*FrameSize = ((char *)pc->HeapStackTop - (char *)pc->StackFrame - 1);
 
 	void *FrameHandle = HeapAllocMem(pc, *FrameSize);
-	memcpy(FrameHandle, (void *)pc->StackFrame, *FrameSize);
+	memcpy(FrameHandle, (char *)pc->StackFrame + MEM_ALIGN(sizeof(ALIGN_TYPE)), *FrameSize);
 
 	return FrameHandle;
 }
@@ -141,12 +141,28 @@ void *HeapSavePreviousStackFrame(Picoc *pc, int *FrameSize)
 	if (*(void **)BasePtr == NULL)
 		return NULL;
 
-	*FrameSize = ((char *)pc->StackFrame - (char *)BasePtr);
+	*FrameSize = ((char *)pc->StackFrame - (char *)BasePtr - 1);
 
 	void *FrameHandle = HeapAllocMem(pc, *FrameSize);
-	memcpy(FrameHandle, BasePtr, *FrameSize);
+	memcpy(FrameHandle, (char *)BasePtr + MEM_ALIGN(sizeof(ALIGN_TYPE)), *FrameSize);
 
 	return FrameHandle;
+}
+
+void RestoreCoroutineFrame(Picoc *pc, struct CoroHandle *coroHandle)
+{
+	memcpy(pc->HeapStackTop, coroHandle->ParamDataFrame, coroHandle->ParamDataFrameSize);
+	pc->HeapStackTop = (void *)((char *)pc->HeapStackTop + coroHandle->ParamDataFrameSize);
+	HeapFreeMem(pc, coroHandle->ParamDataFrame);
+
+	HeapPushStackFrame(pc);
+	struct StackFrame *NewStackFrame = pc->HeapStackTop;
+
+	memcpy(pc->HeapStackTop, coroHandle->LocalFrame, coroHandle->LocalFrameSize);
+	pc->HeapStackTop = (void *)((char *)pc->HeapStackTop + coroHandle->LocalFrameSize);
+
+	NewStackFrame->PreviousStackFrame = pc->TopStackFrame;
+	pc->TopStackFrame = NewStackFrame;
 }
 
 /* pop the current stack frame, freeing all memory in the frame. can return NULL */

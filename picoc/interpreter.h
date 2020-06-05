@@ -109,7 +109,8 @@ enum RunMode
     RunModeCaseSearch,          /* searching for a case label */
     RunModeBreak,               /* breaking out of a switch/while/do */
     RunModeContinue,            /* as above but repeat the loop */
-    RunModeGoto                 /* searching for a goto label */
+    RunModeGoto,                /* searching for a goto label */
+	RunModeCoroutine			/* expect to get a coroutine handle and resume it */
 };
 
 /* parser state - has all this detail so we can parse nested files */
@@ -188,11 +189,20 @@ struct FuncDef
 /* coroutine handle */
 struct CoroHandle
 {
-	void *StackFrame;
+	void *ParamDataFrame;
+	int ParamDataFrameSize;
+
+	void *LocalFrame;
+	int LocalFrameSize;
+
+	char *FuncName;
+	struct ParseState *Continuation;
+	/*void *StackFrame;
 	int StackFrameSize;
 	void *ParamsParseFrame;
 	int ParamsParseFrameSize;
-	struct ParseState *Continuation;
+	*/
+
 };
 
 /* macro definition */
@@ -243,6 +253,7 @@ struct Value
 struct TableEntry
 {
     struct TableEntry *Next;        /* next item in this hash chain */
+	int NextEntryOffset;			/* Offset of the Next entry in the linked list from Table */
     const char *DeclFileName;       /* where the variable was declared */
     unsigned short DeclLine;
     unsigned short DeclColumn;
@@ -265,6 +276,8 @@ struct TableEntry
         } b;
         
     } p;
+
+	int ValOffsetFromTable;			/* Offset of the entry's Val from Table */
 };
     
 struct Table
@@ -272,6 +285,7 @@ struct Table
     short Size;
     short OnHeap;
     struct TableEntry **HashTable;
+	int *OffsetTable;
 };
 
 /* stack frame for function calls */
@@ -284,6 +298,7 @@ struct StackFrame
     int NumParams;                          /* the number of parameters */
     struct Table LocalTable;                /* the local variables and parameters */
     struct TableEntry *LocalHashTable[LOCAL_TABLE_SIZE];
+	int LocalOffsetTable[LOCAL_TABLE_SIZE];
     struct StackFrame *PreviousStackFrame;  /* the next lower stack frame */
 };
 
@@ -378,6 +393,7 @@ struct Picoc_Struct
     struct Table GlobalTable;
     struct CleanupTokenNode *CleanupTokenList;
     struct TableEntry *GlobalHashTable[GLOBAL_TABLE_SIZE];
+    int GlobalOffsetTable[GLOBAL_TABLE_SIZE];
     
     /* lexer global data */
     struct TokenLine *InteractiveHead;
@@ -388,10 +404,12 @@ struct Picoc_Struct
     struct Value LexValue;
     struct Table ReservedWordTable;
     struct TableEntry *ReservedWordHashTable[RESERVED_WORD_TABLE_SIZE];
+    int ReservedWordOffsetTable[RESERVED_WORD_TABLE_SIZE];
 
     /* the table of string literal values */
     struct Table StringLiteralTable;
     struct TableEntry *StringLiteralHashTable[STRING_LITERAL_TABLE_SIZE];
+    int StringLiteralOffsetTable[STRING_LITERAL_TABLE_SIZE];
     
     /* the stack */
     struct StackFrame *TopStackFrame;
@@ -454,6 +472,7 @@ struct Picoc_Struct
     /* debugger */
     struct Table BreakpointTable;
     struct TableEntry *BreakpointHashTable[BREAKPOINT_TABLE_SIZE];
+    int BreakpointOffsetTable[BREAKPOINT_TABLE_SIZE];
     int BreakpointCount;
     int DebugManualBreak;
     
@@ -478,6 +497,7 @@ struct Picoc_Struct
     /* string table */
     struct Table StringTable;
     struct TableEntry *StringHashTable[STRING_TABLE_SIZE];
+    int StringOffsetTable[STRING_TABLE_SIZE];
     char *StrEmpty;
 };
 
@@ -485,7 +505,7 @@ struct Picoc_Struct
 void TableInit(Picoc *pc);
 char *TableStrRegister(Picoc *pc, const char *Str);
 char *TableStrRegister2(Picoc *pc, const char *Str, int Len);
-void TableInitTable(struct Table *Tbl, struct TableEntry **HashTable, int Size, int OnHeap);
+void TableInitTable(struct Table *Tbl, struct TableEntry **HashTable, int *EntriesHashTable, int Size, int OnHeap);
 int TableSet(Picoc *pc, struct Table *Tbl, char *Key, struct Value *Val, const char *DeclFileName, int DeclLine, int DeclColumn);
 int TableGet(struct Table *Tbl, const char *Key, struct Value **Val, const char **DeclFileName, int *DeclLine, int *DeclColumn);
 struct Value *TableDelete(Picoc *pc, struct Table *Tbl, const char *Key);
@@ -549,6 +569,7 @@ void HeapUnpopStack(Picoc *pc, int Size);
 void HeapPushStackFrame(Picoc *pc);
 void *HeapSaveCurrentStackFrame(Picoc *pc, int *FrameSize);
 void *HeapSavePreviousStackFrame(Picoc *pc, int *FrameSize);
+void RestoreCoroutineFrame(Picoc *pc, struct CoroHandle *coroHandle);
 int HeapPopStackFrame(Picoc *pc);
 void *HeapAllocMem(Picoc *pc, int Size);
 void HeapFreeMem(Picoc *pc, void *Mem);
@@ -563,6 +584,7 @@ void VariableStackPop(struct ParseState *Parser, struct Value *Var);
 struct Value *VariableAllocValueAndData(Picoc *pc, struct ParseState *Parser, int DataSize, int IsLValue, struct Value *LValueFrom, int OnHeap);
 struct Value *VariableAllocValueAndCopy(Picoc *pc, struct ParseState *Parser, struct Value *FromValue, int OnHeap);
 struct Value *VariableAllocValueFromType(Picoc *pc, struct ParseState *Parser, struct ValueType *Typ, int IsLValue, struct Value *LValueFrom, int OnHeap);
+int SizeAllocatedForVariableTypeOnStack(Picoc *pc, struct ValueType *Typ);
 struct Value *VariableAllocValueFromExistingData(struct ParseState *Parser, struct ValueType *Typ, union AnyValue *FromValue, int IsLValue, struct Value *LValueFrom);
 struct Value *VariableAllocValueShared(struct ParseState *Parser, struct Value *FromValue);
 struct Value *VariableDefine(Picoc *pc, struct ParseState *Parser, char *Ident, struct Value *InitValue, struct ValueType *Typ, int MakeWritable);

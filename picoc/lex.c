@@ -91,7 +91,7 @@ void LexInit(Picoc *pc)
 {
     int Count;
     
-    TableInitTable(&pc->ReservedWordTable, &pc->ReservedWordHashTable[0], sizeof(ReservedWords) / sizeof(struct ReservedWord) * 2, TRUE);
+    TableInitTable(&pc->ReservedWordTable, &pc->ReservedWordHashTable[0], &pc->ReservedWordOffsetTable[0], sizeof(ReservedWords) / sizeof(struct ReservedWord) * 2, TRUE);
 
     for (Count = 0; Count < sizeof(ReservedWords) / sizeof(struct ReservedWord); Count++)
     {

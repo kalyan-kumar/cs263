@@ -10,8 +10,8 @@
 /* initialise the variable system */
 void VariableInit(Picoc *pc)
 {
-    TableInitTable(&(pc->GlobalTable), &(pc->GlobalHashTable)[0], GLOBAL_TABLE_SIZE, TRUE);
-    TableInitTable(&pc->StringLiteralTable, &pc->StringLiteralHashTable[0], STRING_LITERAL_TABLE_SIZE, TRUE);
+    TableInitTable(&(pc->GlobalTable), &(pc->GlobalHashTable)[0], NULL, GLOBAL_TABLE_SIZE, TRUE);
+    TableInitTable(&pc->StringLiteralTable, &pc->StringLiteralHashTable[0], NULL, STRING_LITERAL_TABLE_SIZE, TRUE);
     pc->TopStackFrame = NULL;
 }
 
@@ -112,6 +112,14 @@ struct Value *VariableAllocValueFromType(Picoc *pc, struct ParseState *Parser, s
     NewValue->Typ = Typ;
     
     return NewValue;
+}
+
+int SizeAllocatedForVariableTypeOnStack(Picoc *pc, struct ValueType *Typ)
+{
+	int DataSize = TypeSize(Typ, Typ->ArraySize, FALSE);
+	int ValueStructSize = MEM_ALIGN(sizeof(struct Value));
+	int TotalSize = MEM_ALIGN(ValueStructSize + DataSize);
+	return TotalSize;
 }
 
 /* allocate a value either on the heap or the stack and copy its value. handles overlapping data */
@@ -421,7 +429,7 @@ void VariableStackFrameAdd(struct ParseState *Parser, const char *FuncName, int 
     ParserCopy(&NewFrame->ReturnParser, Parser);
     NewFrame->FuncName = FuncName;
     NewFrame->Parameter = (NumParams > 0) ? ((void *)((char *)NewFrame + sizeof(struct StackFrame))) : NULL;
-    TableInitTable(&NewFrame->LocalTable, &NewFrame->LocalHashTable[0], LOCAL_TABLE_SIZE, FALSE);
+    TableInitTable(&NewFrame->LocalTable, &NewFrame->LocalHashTable[0], &NewFrame->LocalOffsetTable[0], LOCAL_TABLE_SIZE, FALSE);
     NewFrame->PreviousStackFrame = Parser->pc->TopStackFrame;
     Parser->pc->TopStackFrame = NewFrame;
 }

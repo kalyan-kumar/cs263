@@ -898,6 +898,17 @@ enum ParseResult ParseStatement(struct ParseState *Parser, int CheckTrailingSemi
                 Parser->Mode = RunModeGoto;
             }
             break;
+
+		case TokenResume:
+		{
+			enum RunMode OldMode = Parser->Mode;
+			if (OldMode == RunModeRun)
+				Parser->Mode = RunModeCoroutine;
+
+			ExpressionParse(Parser, &CValue);
+			Parser->Mode = OldMode;
+			break;
+		}
                 
         case TokenDelete:
         {
