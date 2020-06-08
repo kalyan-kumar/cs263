@@ -110,7 +110,8 @@ enum RunMode
     RunModeBreak,               /* breaking out of a switch/while/do */
     RunModeContinue,            /* as above but repeat the loop */
     RunModeGoto,                /* searching for a goto label */
-	RunModeCoroutine			/* expect to get a coroutine handle and resume it */
+	RunModeResume,				/* expect to get a coroutine handle and resume it */
+	RunModeSuspend				/* suspend the current function */
 };
 
 /* parser state - has all this detail so we can parse nested files */
@@ -196,13 +197,9 @@ struct CoroHandle
 	int LocalFrameSize;
 
 	char *FuncName;
-	struct ParseState *Continuation;
-	/*void *StackFrame;
-	int StackFrameSize;
-	void *ParamsParseFrame;
-	int ParamsParseFrameSize;
-	*/
+	struct ParseState Continuation;
 
+	int CanExecute;
 };
 
 /* macro definition */
@@ -532,6 +529,7 @@ void LexInteractiveStatementPrompt(Picoc *pc);
 void PicocParseInteractiveNoStartPrompt(Picoc *pc, int EnableDebugger);
 enum ParseResult ParseStatement(struct ParseState *Parser, int CheckTrailingSemicolon);
 struct Value *ParseFunctionDefinition(struct ParseState *Parser, struct ValueType *ReturnType, char *Identifier);
+enum RunMode ParseBlock(struct ParseState *Parser, int AbsorbOpenBrace, int Condition);
 void ParseCleanup(Picoc *pc);
 void ParserCopyPos(struct ParseState *To, struct ParseState *From);
 void ParserCopy(struct ParseState *To, struct ParseState *From);

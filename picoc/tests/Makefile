@@ -63,6 +63,7 @@ TESTS=	00_assignment.test \
 	67_macro_crash.test \
 	68_return.test \
 	69_coro_decl.test \
+	70_coro_resm.test \
 
 
 

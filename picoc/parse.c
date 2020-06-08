@@ -516,15 +516,20 @@ void ParseFor(struct ParseState *Parser)
 /* parse a block of code and return what mode it returned in */
 enum RunMode ParseBlock(struct ParseState *Parser, int AbsorbOpenBrace, int Condition)
 {
-    int PrevScopeID = 0, ScopeID = VariableScopeBegin(Parser, &PrevScopeID);
+    int PrevScopeID = 0, ScopeID = 0;
+    enum RunMode OldMode = Parser->Mode;
+
+	if (OldMode != RunModeResume)
+		ScopeID = VariableScopeBegin(Parser, &PrevScopeID);
+	else
+		Parser->Mode = RunModeRun;
 
     if (AbsorbOpenBrace && LexGetToken(Parser, NULL, TRUE) != TokenLeftBrace)
         ProgramFail(Parser, "'{' expected");
 
-    if (Parser->Mode == RunModeSkip || !Condition)
+    if (OldMode == RunModeSkip || !Condition)
     { 
         /* condition failed - skip this block instead */
-        enum RunMode OldMode = Parser->Mode;
         Parser->Mode = RunModeSkip;
         while (ParseStatement(Parser, TRUE) == ParseResultOk)
         {}
@@ -534,13 +539,21 @@ enum RunMode ParseBlock(struct ParseState *Parser, int AbsorbOpenBrace, int Cond
     { 
         /* just run it in its current mode */
         while (ParseStatement(Parser, TRUE) == ParseResultOk)
-        {}
+        {
+			if (Parser->Mode == RunModeSuspend)
+				break;
+		}
     }
     
-    if (LexGetToken(Parser, NULL, TRUE) != TokenRightBrace)
+    if (Parser->Mode != RunModeSuspend && LexGetToken(Parser, NULL, TRUE) != TokenRightBrace)
+	{
         ProgramFail(Parser, "'}' expected");
+	}
 
-    VariableScopeEnd(Parser, ScopeID, PrevScopeID);
+	if (OldMode != RunModeResume)
+	{
+		VariableScopeEnd(Parser, ScopeID, PrevScopeID);
+	}
 
     return Parser->Mode;
 }
@@ -883,6 +896,30 @@ enum ParseResult ParseStatement(struct ParseState *Parser, int CheckTrailingSemi
                 ExpressionParse(Parser, &CValue);
             break;
 
+		case TokenSuspend:
+			if (Parser->Mode == RunModeRun)
+			{
+				if (!Parser->pc->TopStackFrame)
+					ProgramFail(Parser, "suspend must occur from within a non-main function");
+
+				if (Parser->pc->TopStackFrame->ReturnValue->Typ->Base != TypeVoid)
+				{
+					if (!ExpressionParse(Parser, &CValue))
+						ProgramFail(Parser, "yield a value when suspending");
+
+					ExpressionAssign(Parser, Parser->pc->TopStackFrame->ReturnValue, CValue, TRUE, NULL, 0, FALSE);
+				}
+				else
+				{
+					if (ExpressionParse(Parser, &CValue))
+						ProgramFail(Parser, "cannot yield a value from void function");
+				}
+				Parser->Mode = RunModeSuspend;
+			}
+			else
+				ExpressionParse(Parser, &CValue);
+			break;
+
         case TokenTypedef:
             ParseTypedef(Parser);
             break;
@@ -903,7 +940,7 @@ enum ParseResult ParseStatement(struct ParseState *Parser, int CheckTrailingSemi
 		{
 			enum RunMode OldMode = Parser->Mode;
 			if (OldMode == RunModeRun)
-				Parser->Mode = RunModeCoroutine;
+				Parser->Mode = RunModeResume;
 
 			ExpressionParse(Parser, &CValue);
 			Parser->Mode = OldMode;
