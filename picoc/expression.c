@@ -79,6 +79,8 @@ static struct OpPrecedence OperatorPrecedence[] =
 
 void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionStack **StackTop, const char *FuncName, int RunIt, int ForCoroHandle);
 
+void RestoreAndRunCoroutine(struct ParseState *Parser, struct ExpressionStack **StackTop, struct CoroHandle *coroHandle);
+
 #ifdef DEBUG_EXPRESSIONS
 /* show the contents of the expression stack */
 void ExpressionStackShow(Picoc *pc, struct ExpressionStack *StackTop)
@@ -1280,7 +1282,7 @@ int ExpressionParse(struct ParseState *Parser, struct Value **Result)
                     else
                         ExpressionStackPushLValue(Parser, &StackTop, VariableValue, 0); /* it's a value variable */
                 }
-				else if (Parser->Mode == RunModeCoroutine)
+				else if (Parser->Mode == RunModeResume)
                 {
                     struct Value *VariableValue = NULL;
                     
@@ -1288,8 +1290,7 @@ int ExpressionParse(struct ParseState *Parser, struct Value **Result)
                     if (VariableValue->Typ->Base != TypePointer)
 						ProgramFail(Parser, "coroutine handle expected");
 
-					struct CoroHandle *coroHandle = VariableValue->Val->Pointer;
-                    //ExpressionStackPushLValue(Parser, &StackTop, VariableValue, 0); /* it's a value variable */
+					RestoreAndRunCoroutine(Parser, &StackTop, VariableValue->Val->Pointer);
 				}
                 else /* push a dummy value */
                     ExpressionPushInt(Parser, &StackTop, 0);
@@ -1328,7 +1329,8 @@ int ExpressionParse(struct ParseState *Parser, struct Value **Result)
             TypeValue->Val->Typ = Typ;
             ExpressionStackPushValueNode(Parser, &StackTop, TypeValue);
         }
-		else if (Token == TokenCoAwait) {
+		else if (Token == TokenCoAwait)
+		{
 			LexGetToken(Parser, &LexValue, TRUE);
 			int RunIt = (Parser->Mode == RunModeRun && Precedence < IgnorePrecedence);
 			ExpressionParseFunctionCall(Parser, &StackTop, LexValue->Val->Identifier, RunIt, TRUE);
@@ -1477,7 +1479,10 @@ void SetupOffsetsInStackFrame(struct ParseState *Parser)
 	int QueueCount;
 	for (QueueCount=0 ; QueueCount<LOCAL_TABLE_SIZE ; QueueCount++)
 	{
-		StackFrame->LocalOffsetTable[QueueCount] = ((char *)StackFrame->LocalHashTable[QueueCount] - (char *)(&(StackFrame->LocalTable)));
+		if (StackFrame->LocalHashTable[QueueCount] != NULL)
+			StackFrame->LocalOffsetTable[QueueCount] = ((char *)StackFrame->LocalHashTable[QueueCount] - (char *)(&(StackFrame->LocalTable)));
+		else
+			StackFrame->LocalOffsetTable[QueueCount] = 0;
 
 		for (Entry = StackFrame->LocalHashTable[QueueCount] ; Entry != NULL ; Entry = Entry->Next)
 		{
@@ -1500,7 +1505,10 @@ void RestorePointersInStackFrame(struct ParseState *Parser)
 	int QueueCount;
 	for (QueueCount=0 ; QueueCount<LOCAL_TABLE_SIZE ; QueueCount++)
 	{
-		TopStackFrame->LocalHashTable[QueueCount] = (struct TableEntry *)((char *)(&(TopStackFrame->LocalTable)) + TopStackFrame->LocalOffsetTable[QueueCount]);
+		if (TopStackFrame->LocalOffsetTable[QueueCount] != 0)
+			TopStackFrame->LocalHashTable[QueueCount] = (struct TableEntry *)((char *)(&(TopStackFrame->LocalTable)) + TopStackFrame->LocalOffsetTable[QueueCount]);
+		else
+			TopStackFrame->LocalHashTable[QueueCount] = NULL;
 
 		for (Entry = TopStackFrame->LocalHashTable[QueueCount] ; Entry != NULL ; Entry = Entry->Next)
 		{
@@ -1522,6 +1530,8 @@ void RestoreAndRunCoroutine(struct ParseState *Parser, struct ExpressionStack **
 	void *ParamDataPtr = NULL;
     int ArgCount;
 
+    enum RunMode OldMode = Parser->Mode;
+
 	/* get the function definition */
 	VariableGet(Parser->pc, Parser, coroHandle->FuncName, &FuncValue);
 
@@ -1542,6 +1552,7 @@ void RestoreAndRunCoroutine(struct ParseState *Parser, struct ExpressionStack **
 	for (ArgCount=0 ; ArgCount<FuncValue->Val->FuncDef.NumParams ; ArgCount++)
 	{
         ParamArray[ArgCount] = ParamDataPtr;
+		ParamArray[ArgCount]->Val = (union AnyValue *)((char *)ParamDataPtr + MEM_ALIGN(sizeof(struct Value)));
 		ParamDataPtr = (void *)((char *)ParamDataPtr + SizeAllocatedForVariableTypeOnStack(Parser->pc, FuncValue->Val->FuncDef.ParamType[ArgCount]));
 	}
 
@@ -1551,11 +1562,41 @@ void RestoreAndRunCoroutine(struct ParseState *Parser, struct ExpressionStack **
 	ParserCopy(&(TopStackFrame->ReturnParser), Parser);
 	TopStackFrame->Parameter = (TopStackFrame->NumParams > 0) ? ((void *)((char *)TopStackFrame + sizeof(struct StackFrame))) : NULL;
 
+	if (LexGetToken(&(coroHandle->Continuation), NULL, FALSE) == TokenLeftBrace)
+	{
+		LexGetToken(&(coroHandle->Continuation), NULL, TRUE);
+		int PrevScopeID = 0;
+		VariableScopeBegin(&(coroHandle->Continuation), &PrevScopeID);
+	}
 
-	struct ParseState FuncParser;
-	if (FuncValue->Val->FuncDef.Body.Pos == NULL)
-		ProgramFail(Parser, "'%s' is undefined", coroHandle->FuncName);
-    ParserCopy(&FuncParser, &FuncValue->Val->FuncDef.Body);
+	ParseBlock(&(coroHandle->Continuation), FALSE, TRUE);
+
+	if (coroHandle->Continuation.Mode == RunModeRun && FuncValue->Val->FuncDef.ReturnType != &Parser->pc->VoidType)
+		ProgramFail(&(coroHandle->Continuation), "no value returned from a function returning %t", FuncValue->Val->FuncDef.ReturnType);
+
+	else if (coroHandle->Continuation.Mode == RunModeGoto)
+		ProgramFail(&(coroHandle->Continuation), "couldn't find goto label '%s'", coroHandle->Continuation.SearchGotoLabel);
+
+	if (coroHandle->Continuation.Mode == RunModeSuspend)
+	{
+		char *ParamDataStart = (char *)(ParamArray + FuncValue->Val->FuncDef.NumParams);
+		coroHandle->ParamDataFrameSize = (char *)ParamDataPtr - ParamDataStart;
+		memcpy(coroHandle->ParamDataFrame, ParamDataStart, coroHandle->ParamDataFrameSize);
+
+		SetupOffsetsInStackFrame(Parser);
+		coroHandle->LocalFrame = HeapSaveCurrentStackFrame(Parser->pc, &(coroHandle->LocalFrameSize));
+
+		coroHandle->CanExecute = TRUE;
+		coroHandle->Continuation.Mode = RunModeResume;
+	}
+	else {
+		coroHandle->CanExecute = FALSE;
+		coroHandle->Continuation.Mode = RunModeReturn;
+	}
+
+	VariableStackFramePop(Parser);
+	HeapPopStackFrame(Parser->pc);
+    Parser->Mode = OldMode;
 }
 
 /* do a function call */
@@ -1569,7 +1610,7 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
     int ArgCount;
     enum LexToken Token = LexGetToken(Parser, NULL, TRUE);    /* open bracket */
     enum RunMode OldMode = Parser->Mode;
-    
+
     if (RunIt)
     { 
         /* get the function definition */
@@ -1610,7 +1651,7 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
     do {
         if (RunIt && ArgCount < FuncValue->Val->FuncDef.NumParams)
             ParamArray[ArgCount] = VariableAllocValueFromType(Parser->pc, Parser, FuncValue->Val->FuncDef.ParamType[ArgCount], FALSE, NULL, FALSE);
-        
+
         if (ExpressionParse(Parser, &Param))
         {
             if (RunIt)
@@ -1660,6 +1701,8 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
             
             ParserCopy(&FuncParser, &FuncValue->Val->FuncDef.Body);
 
+			char *ParamDataEnd = Parser->pc->HeapStackTop;
+
             VariableStackFrameAdd(Parser, FuncName, FuncValue->Val->FuncDef.Intrinsic ? FuncValue->Val->FuncDef.NumParams : 0);
             Parser->pc->TopStackFrame->NumParams = ArgCount;
             Parser->pc->TopStackFrame->ReturnValue = ReturnValue;
@@ -1675,7 +1718,7 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
 			if (ForCoroHandle)
 			{
 				char *ParamDataStart = (char *)(ParamArray + FuncValue->Val->FuncDef.NumParams);
-				int ParamDataFrameSize = ((char *)Parser->pc->HeapStackTop - ParamDataStart);
+				int ParamDataFrameSize = ParamDataEnd - ParamDataStart;
 				void *ParamDataFrame = HeapAllocMem(Parser->pc, ParamDataFrameSize);
 				memcpy(ParamDataFrame, ParamDataStart, ParamDataFrameSize);
 
@@ -1685,10 +1728,10 @@ void ExpressionParseFunctionCall(struct ParseState *Parser, struct ExpressionSta
 				SetupOffsetsInStackFrame(Parser);
 				coroHandle->LocalFrame = HeapSaveCurrentStackFrame(Parser->pc, &(coroHandle->LocalFrameSize));
 
-				struct ParseState *Continuation = HeapAllocMem(Parser->pc, sizeof(struct ParseState));
-				ParserCopy(Continuation, &FuncParser);
-
+				FuncParser.Mode = RunModeResume;
+				ParserCopy(&(coroHandle->Continuation), &FuncParser);
 				coroHandle->FuncName = FuncName;
+				coroHandle->CanExecute = TRUE;
 			}
 			else
 			{
