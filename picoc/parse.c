@@ -538,11 +538,22 @@ enum RunMode ParseBlock(struct ParseState *Parser, int AbsorbOpenBrace, int Cond
     else
     { 
         /* just run it in its current mode */
-        while (ParseStatement(Parser, TRUE) == ParseResultOk)
+    enum ParseResult Ok;
+		do {
+			Ok = ParseStatement(Parser, TRUE);
+			if (Ok == ParseResultError && LexGetToken(Parser, NULL, FALSE) == TokenRightBrace)
+			{
+				Ok = ParseResultOk;
+				LexGetToken(Parser, NULL, TRUE);
+			}
+			if (Parser->Mode == RunModeSuspend)
+				break;
+		} while (Ok == ParseResultOk);
+        /*while (ParseStatement(Parser, TRUE) == ParseResultOk)
         {
 			if (Parser->Mode == RunModeSuspend)
 				break;
-		}
+		}*/
     }
     
     if (Parser->Mode != RunModeSuspend && LexGetToken(Parser, NULL, TRUE) != TokenRightBrace)
